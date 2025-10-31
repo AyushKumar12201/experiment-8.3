@@ -1,0 +1,115 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+const PORT = 3000;
+const SECRET_KEY = 'your_secret_key';
+
+app.use(bodyParser.json());
+
+// Hardcoded users
+const users = [
+  { id: 1, username: 'adminUser', password: 'admin123', role: 'Admin' },
+  { id: 2, username: 'modUser', password: 'mod123', role: 'Moderator' },
+  { id: 3, username: 'generalUser', password: 'user123', role: 'User' },
+];
+
+// Login endpoint (returns JWT with role)
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(
+    (u) => u.username === username && u.password === password
+  );
+  if (user) {
+    const payload = {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    };
+    const token = jwt.sign(payload, SECRET_KEY, { expiresIn: '1h' });
+    res.json({ token });
+  } else {
+    res.status(401).json({ message: 'Invalid credentials' });
+  }
+});
+
+// JWT auth middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ message: 'Token missing' });
+
+  const token = authHeader.split(' ')[1];
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ message: 'Invalid or expired token' });
+    req.user = user;
+    next();
+  });
+}
+
+// Role-based guard middleware
+function authorizeRoles(...roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied: insufficient role' });
+    }
+    next();
+  };
+}
+
+// General User profile route (logged in users only)
+app.get('/user-profile', authenticateToken, (req, res) => {
+  res.json({
+    message: `Welcome to your profile, ${req.user.username}`,
+    user: {
+      id: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      iat: req.user.iat,
+      exp: req.user.exp,
+    },
+  });
+});
+
+// Admin-only dashboard
+app.get(
+  '/admin-dashboard',
+  authenticateToken,
+  authorizeRoles('Admin'),
+  (req, res) => {
+    res.json({
+      message: 'Welcome to the Admin dashboard',
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        iat: req.user.iat,
+        exp: req.user.exp,
+      },
+    });
+  }
+);
+
+// Moderator-only panel
+app.get(
+  '/moderator-panel',
+  authenticateToken,
+  authorizeRoles('Moderator'),
+  (req, res) => {
+    res.json({
+      message: 'Welcome to the Moderator panel',
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        iat: req.user.iat,
+        exp: req.user.exp,
+      },
+    });
+  }
+);
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
